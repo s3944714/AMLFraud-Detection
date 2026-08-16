@@ -1,0 +1,16 @@
+# pipeline
+ieee-fraud-network/data/raw/*.csv
+ieee-fraud-network/data/processed/*
+ieee-fraud-network/*.png
+ieee-fraud-network/metrics.json
+
+# app
+fraud-review-app/data/*.csv
+!fraud-review-app/data/sample/*.csv
+
+# common
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.env
+*.egg-info/
