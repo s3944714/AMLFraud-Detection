@@ -1,0 +1,11 @@
+cluster_id,TransactionID,shared_attribute,cluster_fraud_rate
+1,3000001,device,0.75
+1,3000002,device,0.75
+1,3000003,device,0.75
+1,3000004,device,0.75
+2,3000005,card_addr,0.667
+2,3000006,card_addr,0.667
+2,3000007,card_addr,0.667
+3,3000008,email,1.0
+3,3000009,email,1.0
+3,3000010,email,1.0

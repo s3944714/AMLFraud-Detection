@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Documentation &ndash; Fraud Case Review</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            surface: "#FFFFFF",
+            canvas: "#FAFAF8",
+            ink: "#1C1B19",
+            muted: "#635F57",
+            line: "#DEDBD3",
+            "line-strong": "#B9B4A8",
+            interactive: "#2F3B52",
+            "interactive-hover": "#1E2738",
+            risk: {
+              critical: "#D55E00",
+              high: "#E69F00",
+              medium: "#0072B2",
+              low: "#009E73",
+            },
+          },
+          fontFamily: {
+            data: ["ui-monospace", "SF Mono", "Cascadia Code", "Roboto Mono", "Consolas", "monospace"],
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<body class="bg-canvas text-ink font-sans text-[15px] leading-relaxed m-0">
+  <nav class="flex items-center justify-between gap-4 px-8 py-3 bg-interactive text-white" aria-label="Primary">
+    <a class="inline-flex items-center gap-2 text-white no-underline" href="index.html">
+      <svg class="shrink-0" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true" focusable="false">
+        <line x1="5" y1="16" x2="11" y2="5" stroke="currentColor" stroke-width="1.4" />
+        <line x1="17" y1="16" x2="11" y2="5" stroke="currentColor" stroke-width="1.4" />
+        <line x1="5" y1="16" x2="17" y2="16" stroke="currentColor" stroke-width="1.4" stroke-opacity="0.4" />
+        <circle cx="5" cy="16" r="2.4" fill="currentColor" />
+        <circle cx="17" cy="16" r="2.4" fill="currentColor" />
+        <circle cx="11" cy="5" r="3" fill="currentColor" />
+      </svg>
+      <span class="font-bold text-[1.05rem] tracking-tight">Fraud Case Review</span>
+    </a>
+    <ul class="flex gap-4 list-none m-0 p-0">
+      <li><a href="index.html" class="text-white/80 hover:text-white border-b-2 border-transparent text-sm py-1">Queue</a></li>
+      <li><a href="docs.html" class="text-white border-b-2 border-white font-semibold text-sm py-1" aria-current="page">Documentation</a></li>
+    </ul>
+  </nav>
+
+  <main class="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] gap-10 max-w-[980px] mx-auto px-8 py-10">
+    <aside class="md:sticky md:top-8 self-start" aria-label="Table of contents">
+      <p class="text-[0.72rem] uppercase tracking-wide text-muted mb-2">On this page</p>
+      <ul class="list-none m-0 p-0 border-l-2 border-line">
+        <li><a href="#overview" class="block py-1 pl-3 -ml-0.5 border-l-2 border-transparent text-muted hover:text-ink hover:border-line-strong text-[0.88rem] no-underline">Overview</a></li>
+        <li><a href="#methodology" class="block py-1 pl-3 -ml-0.5 border-l-2 border-transparent text-muted hover:text-ink hover:border-line-strong text-[0.88rem] no-underline">How scoring works</a></li>
+        <li><a href="#api" class="block py-1 pl-3 -ml-0.5 border-l-2 border-transparent text-muted hover:text-ink hover:border-line-strong text-[0.88rem] no-underline">API reference</a></li>
+        <li><a href="#contract" class="block py-1 pl-3 -ml-0.5 border-l-2 border-transparent text-muted hover:text-ink hover:border-line-strong text-[0.88rem] no-underline">File contract</a></li>
+        <li><a href="#limitations" class="block py-1 pl-3 -ml-0.5 border-l-2 border-transparent text-muted hover:text-ink hover:border-line-strong text-[0.88rem] no-underline">Limitations</a></li>
+      </ul>
+    </aside>
+
+    <div>
+      <h1 class="text-[1.7rem] font-bold tracking-tight">Documentation</h1>
+      <p class="text-muted max-w-[65ch] mb-10">
+        Fraud Case Review is the batch-scored case-review workbench half of a two-part portfolio project.
+        This page covers how it works, its API, and the file contract it depends on.
+      </p>
+
+      <section id="overview" class="mb-10 pt-3" aria-labelledby="overview-heading">
+        <h2 id="overview-heading" class="text-[1.2rem] font-bold tracking-tight">Overview</h2>
+        <p class="max-w-[72ch] my-2">
+          This application never runs a model, computes SHAP values, or builds an entity graph itself.
+          It reads three flat files &mdash; produced by a separate offline pipeline
+          (<a href="https://www.kaggle.com/competitions/ieee-fraud-detection" class="text-interactive underline">the IEEE&#8209;CIS Fraud Detection
+          dataset</a>, scored by a LightGBM classifier) &mdash; and serves them through a small JSON API to
+          this frontend. That's a deliberate architectural choice, not a limitation: it mirrors how a real
+          fraud-ops system actually runs, where scoring happens as a batch job and a review tool serves that
+          job's output, rather than scoring transactions live on every page load.
+        </p>
+        <p class="max-w-[72ch] my-2">
+          The backend is FastAPI; the frontend is hand-written HTML, CSS (Tailwind, loaded via CDN, no build
+          step), and JavaScript with a single external dependency
+          (<a href="https://d3js.org/" class="text-interactive underline">D3.js</a>, for the entity-link
+          diagram in the case detail panel).
+        </p>
+      </section>
+
+      <section id="methodology" class="mb-10 pt-3 border-t border-line" aria-labelledby="methodology-heading">
+        <h2 id="methodology-heading" class="text-[1.2rem] font-bold tracking-tight">How scoring works</h2>
+
+        <h3 class="text-[0.98rem] font-semibold mt-4">Risk score</h3>
+        <p class="max-w-[72ch] my-2">
+          Each transaction's <code class="font-data text-[0.88em] bg-canvas border border-line rounded px-1.5">risk_score</code> comes from a LightGBM classifier trained on a strict
+          time-based train/test split &mdash; not a random split, since fraud patterns and feature
+          distributions drift over time in this dataset, and a random split would let future transactions
+          leak into training. The model is evaluated on precision-recall AUC and recall-at-alert-budget
+          rather than accuracy, since accuracy is close to meaningless at this dataset's roughly 3.5% fraud
+          rate: a model that flags nothing at all still scores over 96% accuracy.
+        </p>
+
+        <h3 class="text-[0.98rem] font-semibold mt-4">Reason codes</h3>
+        <p class="max-w-[72ch] my-2">
+          Each case's <code class="font-data text-[0.88em] bg-canvas border border-line rounded px-1.5">top_reason</code> and the fuller SHAP breakdown in its detail panel come from
+          <a href="https://shap.readthedocs.io/" class="text-interactive underline">SHAP</a> (TreeExplainer),
+          identifying which features pushed that specific transaction's score up or down. Most of this
+          dataset's columns (<code class="font-data text-[0.88em] bg-canvas border border-line rounded px-1.5">V1</code>&ndash;<code class="font-data text-[0.88em] bg-canvas border border-line rounded px-1.5">V339</code>,
+          <code class="font-data text-[0.88em] bg-canvas border border-line rounded px-1.5">C1</code>&ndash;<code class="font-data text-[0.88em] bg-canvas border border-line rounded px-1.5">C14</code>,
+          <code class="font-data text-[0.88em] bg-canvas border border-line rounded px-1.5">D1</code>&ndash;<code class="font-data text-[0.88em] bg-canvas border border-line rounded px-1.5">D15</code>,
+          most <code class="font-data text-[0.88em] bg-canvas border border-line rounded px-1.5">id_*</code> columns) are anonymized,
+          Vesta&#8209;engineered features that Kaggle never discloses the meaning of. Reason codes for those
+          columns are phrased honestly &mdash; "an anonymized engineered feature," with its value and
+          direction &mdash; rather than inventing plausible-sounding business meaning that isn't actually
+          known. Named columns with real-world meaning (transaction amount, product category, card network,
+          email domain) get a genuine plain-language description.
+        </p>
+
+        <h3 class="text-[0.98rem] font-semibold mt-4">Ring detection</h3>
+        <p class="max-w-[72ch] my-2">
+          A "ring" here means a cluster of transactions linked by a shared card+address combination, device,
+          or email domain, found via connected-components on an entity-link graph, where the cluster's
+          fraud rate is at least double the dataset baseline. This is unsupervised structure-finding, not a
+          verified-fraud-ring detector: a flagged cluster is a lead worth an investigator's attention, not a
+          conviction. Shared attributes can also arise from mundane reasons (a shared household, a shared
+          office).
+        </p>
+      </section>
+
+      <section id="api" class="mb-10 pt-3 border-t border-line" aria-labelledby="api-heading">
+        <h2 id="api-heading" class="text-[1.2rem] font-bold tracking-tight">API reference</h2>
+        <p class="max-w-[72ch] my-2">All endpoints return JSON and require no authentication (this is a single-tenant review tool, not a multi-user system).</p>
+
+        <article class="mt-5 p-4 border border-line rounded-md bg-canvas">
+          <h3 class="text-[0.98rem] font-semibold mt-0"><code class="font-data">GET /api/cases</code></h3>
+          <p class="max-w-[72ch] my-2">List cases from the queue, filtered, sorted by risk score (highest first), and paginated.</p>
+          <table class="w-full border-collapse text-sm my-3">
+            <caption class="sr-only">Query parameters for GET /api/cases</caption>
+            <thead>
+              <tr>
+                <th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Parameter</th>
+                <th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Type</th>
+                <th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Default</th>
+                <th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">min_risk_score</code></td><td class="px-2 py-1 border-b border-line">float, 0&ndash;1</td><td class="px-2 py-1 border-b border-line"><code class="font-data">0.0</code></td><td class="px-2 py-1 border-b border-line">Only return cases at or above this risk score</td></tr>
+              <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">cluster_only</code></td><td class="px-2 py-1 border-b border-line">boolean</td><td class="px-2 py-1 border-b border-line"><code class="font-data">false</code></td><td class="px-2 py-1 border-b border-line">Only return cases linked to a candidate ring</td></tr>
+              <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">limit</code></td><td class="px-2 py-1 border-b border-line">int, 1&ndash;500</td><td class="px-2 py-1 border-b border-line"><code class="font-data">50</code></td><td class="px-2 py-1 border-b border-line">Page size</td></tr>
+              <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">offset</code></td><td class="px-2 py-1 border-b border-line">int, &ge; 0</td><td class="px-2 py-1 border-b border-line"><code class="font-data">0</code></td><td class="px-2 py-1 border-b border-line">Rows to skip before the page starts</td></tr>
+            </tbody>
+          </table>
+          <pre class="bg-ink text-[#F4F2EE] rounded-md p-3 overflow-x-auto text-[0.82rem] leading-relaxed"><code>GET /api/cases?min_risk_score=0.9&amp;limit=20&amp;offset=0
+
+{
+  "items": [
+    {
+      "TransactionID": 3000001,
+      "TransactionAmt": 842.5,
+      "risk_score": 0.97,
+      "top_reason": "device type 'mobile' associated with elevated risk in this data; ...",
+      "cluster_id": 1
+    }
+  ],
+  "total": 36,
+  "limit": 20,
+  "offset": 0
+}</code></pre>
+        </article>
+
+        <article class="mt-5 p-4 border border-line rounded-md bg-canvas">
+          <h3 class="text-[0.98rem] font-semibold mt-0"><code class="font-data">GET /api/cases/{transaction_id}</code></h3>
+          <p class="max-w-[72ch] my-2">A single case's full record, its SHAP feature breakdown, and (if linked to a ring) its cluster-mates.</p>
+          <pre class="bg-ink text-[#F4F2EE] rounded-md p-3 overflow-x-auto text-[0.82rem] leading-relaxed"><code>GET /api/cases/3000001
+
+{
+  "TransactionID": 3000001,
+  "TransactionAmt": 842.5,
+  "risk_score": 0.97,
+  "top_reason": "device type 'mobile' associated with elevated risk...",
+  "cluster_id": 1,
+  "shap_features": [
+    { "feature_name": "DeviceType", "shap_value": 1.42, "feature_value": "mobile" },
+    { "feature_name": "TransactionAmt", "shap_value": 0.88, "feature_value": "842.5" }
+  ],
+  "cluster_info": {
+    "cluster_id": 1,
+    "shared_attribute": "device",
+    "cluster_fraud_rate": 0.667,
+    "member_transaction_ids": [3000002, 3000003]
+  }
+}</code></pre>
+          <p class="max-w-[72ch] my-2">Returns <code class="font-data text-[0.88em] bg-surface border border-line rounded px-1.5">404</code> if the transaction ID isn't in the scored queue.</p>
+        </article>
+
+        <article class="mt-5 p-4 border border-line rounded-md bg-canvas">
+          <h3 class="text-[0.98rem] font-semibold mt-0"><code class="font-data">GET /api/budget-simulation</code></h3>
+          <p class="max-w-[72ch] my-2">
+            Recall achieved at a given review budget, reviewing by risk-score order versus a seeded random
+            baseline of the same size.
+          </p>
+          <table class="w-full border-collapse text-sm my-3">
+            <caption class="sr-only">Query parameters for GET /api/budget-simulation</caption>
+            <thead>
+              <tr>
+                <th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Parameter</th>
+                <th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Type</th>
+                <th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Default</th>
+                <th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">budget_pct</code></td><td class="px-2 py-1 border-b border-line">float, 0&ndash;1</td><td class="px-2 py-1 border-b border-line">required</td><td class="px-2 py-1 border-b border-line">Fraction of the queue a review team can cover</td></tr>
+            </tbody>
+          </table>
+          <p class="max-w-[72ch] my-2">
+            If the loaded data includes an <code class="font-data text-[0.88em] bg-surface border border-line rounded px-1.5">isFraud</code> column, this reports true recall. The real
+            exported pipeline data deliberately omits it &mdash; a production deployment wouldn't have
+            ground truth at scoring time either &mdash; so in that case this falls back to a documented
+            proxy: the fraction of candidate-ring-linked transactions captured, which correlates strongly
+            with fraud but isn't a confirmed label. The response's <code class="font-data text-[0.88em] bg-surface border border-line rounded px-1.5">metric_name</code> and
+            <code class="font-data text-[0.88em] bg-surface border border-line rounded px-1.5">note</code> fields always say plainly which one you're looking at.
+          </p>
+          <pre class="bg-ink text-[#F4F2EE] rounded-md p-3 overflow-x-auto text-[0.82rem] leading-relaxed"><code>GET /api/budget-simulation?budget_pct=0.1
+
+{
+  "budget_pct": 0.1,
+  "n_transactions": 5906,
+  "n_reviewed": 591,
+  "metric_name": "candidate_ring_capture_rate",
+  "is_ground_truth_available": false,
+  "model_metric": 0.42,
+  "random_metric": 0.09,
+  "model_count": 187,
+  "random_count": 41,
+  "note": "No isFraud ground truth in the loaded data, so this is a PROXY metric: ..."
+}</code></pre>
+        </article>
+
+        <article class="mt-5 p-4 border border-line rounded-md bg-canvas">
+          <h3 class="text-[0.98rem] font-semibold mt-0"><code class="font-data">GET /api/summary</code></h3>
+          <p class="max-w-[72ch] my-2">Headline counts for the loaded dataset.</p>
+          <pre class="bg-ink text-[#F4F2EE] rounded-md p-3 overflow-x-auto text-[0.82rem] leading-relaxed"><code>GET /api/summary
+
+{
+  "n_cases": 5906,
+  "n_cluster_members": 22783,
+  "pr_auc": 0.5743
+}</code></pre>
+        </article>
+      </section>
+
+      <section id="contract" class="mb-10 pt-3 border-t border-line" aria-labelledby="contract-heading">
+        <h2 id="contract-heading" class="text-[1.2rem] font-bold tracking-tight">File contract</h2>
+        <p class="max-w-[72ch] my-2">
+          The backend reads three CSVs and an optional metadata file from a data directory, set via the
+          <code class="font-data text-[0.88em] bg-surface border border-line rounded px-1.5">DATA_DIR</code> environment variable (defaults to the bundled synthetic sample in
+          <code class="font-data text-[0.88em] bg-surface border border-line rounded px-1.5">data/sample/</code>).
+        </p>
+
+        <h3 class="text-[0.98rem] font-semibold mt-4"><code class="font-data">scored_transactions.csv</code> &mdash; required</h3>
+        <table class="w-full border-collapse text-sm my-3">
+          <caption class="sr-only">Schema of scored_transactions.csv</caption>
+          <thead><tr><th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Column</th><th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">TransactionID</code></td><td class="px-2 py-1 border-b border-line">Integer, unique</td></tr>
+            <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">TransactionAmt</code></td><td class="px-2 py-1 border-b border-line">Float</td></tr>
+            <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">risk_score</code></td><td class="px-2 py-1 border-b border-line">Float, 0&ndash;1</td></tr>
+            <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">top_reason</code></td><td class="px-2 py-1 border-b border-line">Plain-language SHAP summary</td></tr>
+            <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">cluster_id</code></td><td class="px-2 py-1 border-b border-line">Nullable &mdash; set only for candidate-ring members</td></tr>
+          </tbody>
+        </table>
+
+        <h3 class="text-[0.98rem] font-semibold mt-4"><code class="font-data">shap_detail.csv</code> &mdash; optional, long format</h3>
+        <table class="w-full border-collapse text-sm my-3">
+          <caption class="sr-only">Schema of shap_detail.csv</caption>
+          <thead><tr><th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Column</th><th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">TransactionID</code></td><td class="px-2 py-1 border-b border-line">Foreign key into scored_transactions</td></tr>
+            <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">feature_name</code></td><td class="px-2 py-1 border-b border-line">&mdash;</td></tr>
+            <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">shap_value</code></td><td class="px-2 py-1 border-b border-line">Float, signed</td></tr>
+            <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">feature_value</code></td><td class="px-2 py-1 border-b border-line">The feature's raw value for this transaction</td></tr>
+          </tbody>
+        </table>
+        <p class="max-w-[72ch] my-2">Missing entirely means the app still runs; case detail pages just show no SHAP breakdown.</p>
+
+        <h3 class="text-[0.98rem] font-semibold mt-4"><code class="font-data">entity_clusters.csv</code> &mdash; optional</h3>
+        <table class="w-full border-collapse text-sm my-3">
+          <caption class="sr-only">Schema of entity_clusters.csv</caption>
+          <thead><tr><th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Column</th><th scope="col" class="text-left px-2 py-1 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted">Notes</th></tr></thead>
+          <tbody>
+            <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">cluster_id</code></td><td class="px-2 py-1 border-b border-line">&mdash;</td></tr>
+            <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">TransactionID</code></td><td class="px-2 py-1 border-b border-line">&mdash;</td></tr>
+            <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">shared_attribute</code></td><td class="px-2 py-1 border-b border-line">What linked this transaction to the cluster</td></tr>
+            <tr><td class="px-2 py-1 border-b border-line"><code class="font-data">cluster_fraud_rate</code></td><td class="px-2 py-1 border-b border-line">Float, 0&ndash;1</td></tr>
+          </tbody>
+        </table>
+        <p class="max-w-[72ch] my-2">Missing entirely means the app still runs; no case shows ring membership.</p>
+
+        <h3 class="text-[0.98rem] font-semibold mt-4"><code class="font-data">metadata.json</code> &mdash; optional</h3>
+        <p class="max-w-[72ch] my-2">A dict with at least a <code class="font-data text-[0.88em] bg-surface border border-line rounded px-1.5">pr_auc</code> key, surfaced via <code class="font-data text-[0.88em] bg-surface border border-line rounded px-1.5">/api/summary</code>. Missing means that field is <code class="font-data text-[0.88em] bg-surface border border-line rounded px-1.5">null</code>.</p>
+      </section>
+
+      <section id="limitations" class="mb-10 pt-3 border-t border-line" aria-labelledby="limitations-heading">
+        <h2 id="limitations-heading" class="text-[1.2rem] font-bold tracking-tight">Limitations</h2>
+        <p class="max-w-[72ch] my-2">
+          This is a portfolio and research project built on public competition data, not a production AML
+          system. A real deployment would need AUSTRAC-compliant model documentation, ongoing model risk
+          management, formal validation, and case-management workflows (escalation paths, audit trails,
+          SAR/TTR filing) that this project doesn't attempt to replicate. Candidate rings are unsupervised
+          leads, not confirmed fraud. Where ground truth isn't available, the budget simulator says so
+          explicitly rather than presenting a proxy metric as if it were verified recall.
+        </p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
