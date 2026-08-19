@@ -15,21 +15,26 @@ directly, with no need to touch environment variables, temp files, or
 reimport any modules.
 """
 
+import io
 import logging
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 import numpy as np
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
-from backend.data import AppData, app_data
+from backend.data import AppData, CaseStatusStore, app_data, case_status_store
 from backend.models import (
     BudgetSimulationResponse,
     CaseDetail,
+    CaseStatusUpdate,
     CaseSummary,
     ClusterInfo,
     PaginatedCases,
+    RiskBucket,
+    RiskDistributionResponse,
     ShapFeature,
     SummaryResponse,
 )
@@ -52,18 +57,52 @@ def get_app_data() -> AppData:
     return app_data
 
 
+def get_case_status_store() -> CaseStatusStore:
+    """Same dependency-injection pattern as get_app_data, for the same
+    reason: tests override this to get a fresh, isolated status store per
+    test rather than sharing the real process-lifetime one."""
+    return case_status_store
+
+
 def _cluster_id_or_none(value) -> Optional[int]:
     return int(value) if pd.notna(value) else None
 
 
-def _row_to_case_summary(row: pd.Series) -> CaseSummary:
+def _row_to_case_summary(row: pd.Series, status_store: CaseStatusStore) -> CaseSummary:
+    transaction_id = int(row["TransactionID"])
     return CaseSummary(
-        TransactionID=int(row["TransactionID"]),
+        TransactionID=transaction_id,
         TransactionAmt=float(row["TransactionAmt"]),
         risk_score=float(row["risk_score"]),
         top_reason=str(row["top_reason"]),
         cluster_id=_cluster_id_or_none(row.get("cluster_id")),
+        status=status_store.get(transaction_id),
     )
+
+
+SORTABLE_COLUMNS = {
+    "risk_score": "risk_score",
+    "TransactionAmt": "TransactionAmt",
+    "TransactionID": "TransactionID",
+    "top_reason": "top_reason",
+}
+
+
+def _apply_filters(
+    df: pd.DataFrame, min_risk_score: float, cluster_only: bool, search: Optional[str]
+) -> pd.DataFrame:
+    """Shared filter logic - used by both /api/cases and /api/cases/export
+    so the two can never silently drift apart on what counts as "the
+    currently filtered view"."""
+    filtered = df[df["risk_score"] >= min_risk_score]
+    if cluster_only:
+        filtered = filtered[filtered["cluster_id"].notna()]
+    if search:
+        search_digits = search.strip()
+        filtered = filtered[
+            filtered["TransactionID"].astype(str).str.contains(search_digits, na=False, regex=False)
+        ]
+    return filtered
 
 
 @app.get("/api/cases", response_model=PaginatedCases)
@@ -71,47 +110,86 @@ def get_cases(
     min_risk_score: float = Query(0.0, ge=0.0, le=1.0),
     cluster_only: bool = Query(False),
     search: Optional[str] = Query(None, description="Substring match against TransactionID"),
+    sort_by: Literal["risk_score", "TransactionAmt", "TransactionID", "top_reason"] = Query("risk_score"),
+    sort_dir: Literal["asc", "desc"] = Query("desc"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     data: AppData = Depends(get_app_data),
+    status_store: CaseStatusStore = Depends(get_case_status_store),
 ):
-    df = data.scored_transactions
-    filtered = df[df["risk_score"] >= min_risk_score]
-    if cluster_only:
-        filtered = filtered[filtered["cluster_id"].notna()]
-    if search:
-        # Server-side, not client-side: the queue is paginated, so a
-        # client-side search could only ever search whatever page happens
-        # to be loaded - a search that silently misses matches sitting on
-        # other pages would be worse than no search at all. Substring
-        # match on the string form of TransactionID, not exact match, so
-        # typing partial digits narrows results as-you-type.
-        search_digits = search.strip()
-        filtered = filtered[
-            filtered["TransactionID"].astype(str).str.contains(search_digits, na=False, regex=False)
-        ]
-    filtered = filtered.sort_values("risk_score", ascending=False)
+    filtered = _apply_filters(data.scored_transactions, min_risk_score, cluster_only, search)
+    filtered = filtered.sort_values(SORTABLE_COLUMNS[sort_by], ascending=(sort_dir == "asc"))
 
     total = len(filtered)
     page = filtered.iloc[offset : offset + limit]
 
     return PaginatedCases(
-        items=[_row_to_case_summary(row) for _, row in page.iterrows()],
+        items=[_row_to_case_summary(row, status_store) for _, row in page.iterrows()],
         total=total,
         limit=limit,
         offset=offset,
     )
 
 
+@app.get("/api/cases/export")
+def export_cases_csv(
+    min_risk_score: float = Query(0.0, ge=0.0, le=1.0),
+    cluster_only: bool = Query(False),
+    search: Optional[str] = Query(None),
+    data: AppData = Depends(get_app_data),
+    status_store: CaseStatusStore = Depends(get_case_status_store),
+):
+    """
+    Exports the currently filtered/searched view as a CSV - deliberately
+    NOT limited to the current page (unlike /api/cases, which paginates).
+    A "download my filtered queue" action should hand back everything
+    that matches, not just whatever 20 rows happen to be on screen.
+    """
+    filtered = _apply_filters(data.scored_transactions, min_risk_score, cluster_only, search)
+    filtered = filtered.sort_values("risk_score", ascending=False)
+
+    export_df = filtered[["TransactionID", "TransactionAmt", "risk_score", "top_reason", "cluster_id"]].copy()
+    export_df["status"] = export_df["TransactionID"].map(lambda tid: status_store.get(int(tid)) or "")
+
+    buffer = io.StringIO()
+    export_df.to_csv(buffer, index=False)
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=fraud_cases_export.csv"},
+    )
+
+
+@app.put("/api/cases/{transaction_id}/status", response_model=CaseSummary)
+def set_case_status(
+    transaction_id: int,
+    body: CaseStatusUpdate,
+    data: AppData = Depends(get_app_data),
+    status_store: CaseStatusStore = Depends(get_case_status_store),
+):
+    df = data.scored_transactions
+    match = df[df["TransactionID"] == transaction_id]
+    if match.empty:
+        raise HTTPException(status_code=404, detail=f"No case found for TransactionID {transaction_id}")
+
+    status_store.set(transaction_id, body.status)
+    return _row_to_case_summary(match.iloc[0], status_store)
+
+
 @app.get("/api/cases/{transaction_id}", response_model=CaseDetail)
-def get_case_detail(transaction_id: int, data: AppData = Depends(get_app_data)):
+def get_case_detail(
+    transaction_id: int,
+    data: AppData = Depends(get_app_data),
+    status_store: CaseStatusStore = Depends(get_case_status_store),
+):
     df = data.scored_transactions
     match = df[df["TransactionID"] == transaction_id]
     if match.empty:
         raise HTTPException(status_code=404, detail=f"No case found for TransactionID {transaction_id}")
 
     row = match.iloc[0]
-    summary = _row_to_case_summary(row)
+    summary = _row_to_case_summary(row, status_store)
 
     shap_rows = data.shap_detail[data.shap_detail["TransactionID"] == transaction_id]
     if len(shap_rows):
@@ -211,6 +289,33 @@ def get_summary(data: AppData = Depends(get_app_data)):
     )
     pr_auc = data.metadata.get("pr_auc") if data.metadata else None
     return SummaryResponse(n_cases=n_cases, n_cluster_members=n_cluster_members, pr_auc=pr_auc)
+
+
+@app.get("/api/risk-distribution", response_model=RiskDistributionResponse)
+def get_risk_distribution(data: AppData = Depends(get_app_data)):
+    """
+    Bucketed by the same 4 risk tiers used for badges throughout the UI
+    (Critical/High/Medium/Low), not a separate finer-grained histogram
+    scale - keeps the distribution chart visually consistent with the
+    badge colors and thresholds the reviewer already sees everywhere
+    else, rather than introducing a second, unrelated bucketing scheme.
+    """
+    df = data.scored_transactions
+    tiers = [
+        ("Critical", 0.75, 1.0),
+        ("High", 0.5, 0.75),
+        ("Medium", 0.25, 0.5),
+        ("Low", 0.0, 0.25),
+    ]
+    buckets = []
+    for label, lo, hi in tiers:
+        if hi == 1.0:
+            count = int(((df["risk_score"] >= lo) & (df["risk_score"] <= hi)).sum())
+        else:
+            count = int(((df["risk_score"] >= lo) & (df["risk_score"] < hi)).sum())
+        buckets.append(RiskBucket(label=label, min_score=lo, max_score=hi, count=count))
+
+    return RiskDistributionResponse(buckets=buckets, total=len(df))
 
 
 # Mounted LAST, after every /api route is registered - StaticFiles is a

@@ -6,9 +6,11 @@ frontend depends on, not ad-hoc dicts. Every endpoint in main.py returns
 one of these.
 """
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel
+
+CaseStatus = Literal["reviewed", "escalated", "dismissed"]
 
 
 class CaseSummary(BaseModel):
@@ -17,6 +19,7 @@ class CaseSummary(BaseModel):
     risk_score: float
     top_reason: str
     cluster_id: Optional[int] = None
+    status: Optional[CaseStatus] = None
 
 
 class ShapFeature(BaseModel):
@@ -39,6 +42,10 @@ class ClusterInfo(BaseModel):
 class CaseDetail(CaseSummary):
     shap_features: List[ShapFeature] = []
     cluster_info: Optional[ClusterInfo] = None
+
+
+class CaseStatusUpdate(BaseModel):
+    status: Optional[CaseStatus] = None  # null clears the status back to unreviewed
 
 
 class BudgetSimulationResponse(BaseModel):
@@ -69,3 +76,15 @@ class SummaryResponse(BaseModel):
     n_cases: int
     n_cluster_members: int
     pr_auc: Optional[float] = None
+
+
+class RiskBucket(BaseModel):
+    label: str
+    min_score: float
+    max_score: float
+    count: int
+
+
+class RiskDistributionResponse(BaseModel):
+    buckets: List[RiskBucket]
+    total: int

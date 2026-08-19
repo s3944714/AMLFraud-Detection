@@ -4,18 +4,49 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Fraud Case Review</title>
+  <script>
+    // Applied before first paint (not deferred to app.js) so switching
+    // themes never causes a visible flash of the wrong one on load.
+    if (
+      localStorage.getItem("theme") === "dark" ||
+      (!localStorage.getItem("theme") && window.matchMedia("(prefers-color-scheme: dark)").matches)
+    ) {
+      document.documentElement.classList.add("dark");
+    }
+  </script>
+  <style>
+    /* Structural colors as CSS custom properties, referenced throughout
+       via Tailwind's arbitrary-value syntax (e.g. bg-[var(--c-surface)]).
+       Toggling the .dark class on <html> flips every one of these at
+       once - the alternative (dark: variants on every single utility)
+       would mean double-writing class lists everywhere. Risk-tier badge
+       colors and the nav bar are deliberately NOT variables here: they're
+       self-contained (a colored pill with its own already-verified
+       black/white text) and read fine against either theme unchanged. */
+    :root {
+      --c-canvas: #FAFAF8;
+      --c-surface: #FFFFFF;
+      --c-ink: #1C1B19;
+      --c-muted: #635F57;
+      --c-line: #DEDBD3;
+      --c-line-strong: #B9B4A8;
+    }
+    .dark {
+      --c-canvas: #16171B;
+      --c-surface: #1F2126;
+      --c-ink: #F2F0EC;
+      --c-muted: #A6A29A;
+      --c-line: #33353B;
+      --c-line-strong: #494B52;
+    }
+  </style>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
+      darkMode: "class",
       theme: {
         extend: {
           colors: {
-            surface: "#FFFFFF",
-            canvas: "#FAFAF8",
-            ink: "#1C1B19",
-            muted: "#635F57",
-            line: "#DEDBD3",
-            "line-strong": "#B9B4A8",
             interactive: "#2F3B52",
             "interactive-hover": "#1E2738",
             risk: {
@@ -34,7 +65,7 @@
   </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 </head>
-<body class="bg-canvas text-ink font-sans text-[15px] leading-relaxed m-0">
+<body class="bg-[var(--c-canvas)] text-[var(--c-ink)] font-sans text-[15px] leading-relaxed m-0">
   <nav class="flex items-center justify-between gap-4 px-8 py-3 bg-interactive text-white" aria-label="Primary">
     <a class="inline-flex items-center gap-2 text-white no-underline" href="index.html">
       <svg class="shrink-0" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true" focusable="false">
@@ -47,72 +78,93 @@
       </svg>
       <span class="font-bold text-[1.05rem] tracking-tight">Fraud Case Review</span>
     </a>
-    <ul class="flex gap-4 list-none m-0 p-0">
-      <li><a href="index.html" class="text-white border-b-2 border-white font-semibold text-sm py-1" aria-current="page">Queue</a></li>
-      <li><a href="docs.html" class="text-white/80 hover:text-white border-b-2 border-transparent text-sm py-1">Documentation</a></li>
-    </ul>
+    <div class="flex items-center gap-5">
+      <ul class="flex gap-4 list-none m-0 p-0">
+        <li><a href="index.html" class="text-white border-b-2 border-white font-semibold text-sm py-1" aria-current="page">Queue</a></li>
+        <li><a href="docs.html" class="text-white/80 hover:text-white border-b-2 border-transparent text-sm py-1">Documentation</a></li>
+      </ul>
+      <button type="button" id="theme-toggle-btn" aria-pressed="false"
+              class="text-sm px-2.5 py-1 border border-white/30 rounded-md text-white/90 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white">
+        <span id="theme-toggle-label">Dark mode</span>
+      </button>
+    </div>
   </nav>
 
-  <header class="flex flex-wrap items-end justify-between gap-4 px-8 py-4 bg-surface border-b border-line">
+  <header class="flex flex-wrap items-end justify-between gap-6 px-8 py-4 bg-[var(--c-surface)] border-b border-[var(--c-line)]">
     <div>
       <h1 class="text-[1.4rem] font-bold tracking-tight m-0 mb-1">Case queue</h1>
-      <p class="text-muted text-sm max-w-[52ch] m-0">Transactions flagged by risk score, with SHAP reason codes and entity-linked ring detection.</p>
+      <p class="text-[var(--c-muted)] text-sm max-w-[52ch] m-0">Transactions flagged by risk score, with SHAP reason codes and entity-linked ring detection.</p>
     </div>
-    <dl class="flex gap-6 m-0" id="summary-stats" aria-label="Dataset summary">
-      <div class="text-right">
-        <dt class="text-[0.7rem] uppercase tracking-wide text-muted m-0">Cases</dt>
-        <dd class="font-data text-lg font-semibold m-0" id="stat-n-cases">&ndash;</dd>
+    <div class="flex items-end gap-8 flex-wrap">
+      <div>
+        <p class="text-[0.7rem] uppercase tracking-wide text-[var(--c-muted)] m-0 mb-1">Risk distribution</p>
+        <svg id="risk-distribution-chart" width="220" height="44" role="img" aria-label="Bar chart of case counts by risk tier"></svg>
       </div>
-      <div class="text-right">
-        <dt class="text-[0.7rem] uppercase tracking-wide text-muted m-0">Linked to a ring</dt>
-        <dd class="font-data text-lg font-semibold m-0" id="stat-n-cluster-members">&ndash;</dd>
-      </div>
-      <div class="text-right">
-        <dt class="text-[0.7rem] uppercase tracking-wide text-muted m-0">Model PR&#8209;AUC</dt>
-        <dd class="font-data text-lg font-semibold m-0" id="stat-pr-auc">&ndash;</dd>
-      </div>
-    </dl>
+      <dl class="flex gap-6 m-0" id="summary-stats" aria-label="Dataset summary">
+        <div class="text-right">
+          <dt class="text-[0.7rem] uppercase tracking-wide text-[var(--c-muted)] m-0">Cases</dt>
+          <dd class="font-data text-lg font-semibold m-0" id="stat-n-cases">&ndash;</dd>
+        </div>
+        <div class="text-right">
+          <dt class="text-[0.7rem] uppercase tracking-wide text-[var(--c-muted)] m-0">Linked to a ring</dt>
+          <dd class="font-data text-lg font-semibold m-0" id="stat-n-cluster-members">&ndash;</dd>
+        </div>
+        <div class="text-right">
+          <dt class="text-[0.7rem] uppercase tracking-wide text-[var(--c-muted)] m-0">Model PR&#8209;AUC</dt>
+          <dd class="font-data text-lg font-semibold m-0" id="stat-pr-auc">&ndash;</dd>
+        </div>
+      </dl>
+    </div>
   </header>
 
   <main class="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-6 p-8 items-start">
-    <section class="bg-surface border border-line rounded-md p-4 shadow-sm" aria-labelledby="queue-heading">
-      <div class="flex items-center justify-end mb-2">
+    <section class="bg-[var(--c-surface)] border border-[var(--c-line)] rounded-md p-4 shadow-sm" aria-labelledby="queue-heading">
+      <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
         <h2 id="queue-heading" class="sr-only">Case queue table and filters</h2>
+        <button type="button" id="export-csv-btn"
+                class="text-sm px-3 py-1.5 border border-[var(--c-line-strong)] rounded-md bg-[var(--c-surface)] hover:bg-[var(--c-canvas)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
+          Export CSV
+        </button>
         <ul class="flex gap-4 flex-wrap list-none m-0 p-0" aria-label="Risk tier legend">
           <li class="inline-flex items-center gap-1">
             <span class="inline-flex items-center px-2 py-0.5 rounded-full font-data text-xs font-bold bg-risk-critical text-black">Critical</span>
-            <span class="font-data text-xs text-muted">&ge; 0.75</span>
+            <span class="font-data text-xs text-[var(--c-muted)]">&ge; 0.75</span>
           </li>
           <li class="inline-flex items-center gap-1">
             <span class="inline-flex items-center px-2 py-0.5 rounded-full font-data text-xs font-bold bg-risk-high text-black">High</span>
-            <span class="font-data text-xs text-muted">0.50&ndash;0.74</span>
+            <span class="font-data text-xs text-[var(--c-muted)]">0.50&ndash;0.74</span>
           </li>
           <li class="inline-flex items-center gap-1">
             <span class="inline-flex items-center px-2 py-0.5 rounded-full font-data text-xs font-bold bg-risk-medium text-white">Medium</span>
-            <span class="font-data text-xs text-muted">0.25&ndash;0.49</span>
+            <span class="font-data text-xs text-[var(--c-muted)]">0.25&ndash;0.49</span>
           </li>
           <li class="inline-flex items-center gap-1">
             <span class="inline-flex items-center px-2 py-0.5 rounded-full font-data text-xs font-bold bg-risk-low text-black">Low</span>
-            <span class="font-data text-xs text-muted">&lt; 0.25</span>
+            <span class="font-data text-xs text-[var(--c-muted)]">&lt; 0.25</span>
           </li>
         </ul>
       </div>
 
-      <form class="flex flex-wrap gap-6 items-end mb-4 pb-4 border-b border-line" id="filter-form">
+      <form class="flex flex-wrap gap-6 items-end mb-4 pb-4 border-b border-[var(--c-line)]" id="filter-form">
         <div class="flex flex-col gap-1">
-          <label for="min-risk-score" class="text-xs text-muted">Minimum risk score</label>
+          <label for="txn-search" class="text-xs text-[var(--c-muted)]">Search by Transaction ID</label>
+          <input type="search" id="txn-search" name="txn-search" placeholder="e.g. 3540439"
+                 class="font-data text-sm px-2 py-1 border border-[var(--c-line-strong)] rounded-md w-40 bg-[var(--c-surface)] text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label for="min-risk-score" class="text-xs text-[var(--c-muted)]">Minimum risk score</label>
           <input type="number" id="min-risk-score" name="min-risk-score"
                  min="0" max="1" step="0.05" value="0" inputmode="decimal"
-                 class="font-data text-sm px-2 py-1 border border-line-strong rounded-md w-24 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink" />
+                 class="font-data text-sm px-2 py-1 border border-[var(--c-line-strong)] rounded-md w-24 bg-[var(--c-surface)] text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]" />
         </div>
         <div class="flex flex-row items-center gap-2">
-          <input type="checkbox" id="cluster-only" name="cluster-only" class="focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink" />
+          <input type="checkbox" id="cluster-only" name="cluster-only" class="focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]" />
           <label for="cluster-only" class="text-sm">Ring members only</label>
         </div>
         <div class="flex flex-col gap-1">
-          <label for="page-size" class="text-xs text-muted">Cases per page</label>
+          <label for="page-size" class="text-xs text-[var(--c-muted)]">Cases per page</label>
           <select id="page-size" name="page-size"
-                  class="text-sm px-2 py-1 border border-line-strong rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+                  class="text-sm px-2 py-1 border border-[var(--c-line-strong)] rounded-md bg-[var(--c-surface)] text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
             <option value="10">10</option>
             <option value="20" selected>20</option>
             <option value="50">50</option>
@@ -124,51 +176,68 @@
       <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Case queue table, scrollable">
         <table id="case-table" class="w-full border-collapse text-sm">
           <caption class="sr-only">
-            Flagged transactions ranked by risk score, highest first. Select a row to view its full case detail.
+            Flagged transactions, sortable by column. Select a row to view its full case detail.
           </caption>
           <thead>
             <tr>
-              <th scope="col" class="text-left px-3 py-2 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted font-semibold whitespace-nowrap">Transaction ID</th>
-              <th scope="col" class="text-left px-3 py-2 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted font-semibold whitespace-nowrap">Amount</th>
-              <th scope="col" class="text-left px-3 py-2 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted font-semibold whitespace-nowrap">Risk</th>
-              <th scope="col" class="text-left px-3 py-2 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted font-semibold whitespace-nowrap">Ring</th>
-              <th scope="col" class="text-left px-3 py-2 border-b border-line text-[0.72rem] uppercase tracking-wide text-muted font-semibold whitespace-nowrap">Top reason</th>
+              <th scope="col" class="text-left px-3 py-2 border-b border-[var(--c-line)] text-[0.72rem] uppercase tracking-wide text-[var(--c-muted)] font-semibold whitespace-nowrap">
+                <button type="button" class="sort-header inline-flex items-center gap-1 hover:text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]" data-sort-key="TransactionID">
+                  Transaction ID <span class="sort-indicator" data-sort-indicator-for="TransactionID"></span>
+                </button>
+              </th>
+              <th scope="col" class="text-left px-3 py-2 border-b border-[var(--c-line)] text-[0.72rem] uppercase tracking-wide text-[var(--c-muted)] font-semibold whitespace-nowrap">
+                <button type="button" class="sort-header inline-flex items-center gap-1 hover:text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]" data-sort-key="TransactionAmt">
+                  Amount <span class="sort-indicator" data-sort-indicator-for="TransactionAmt"></span>
+                </button>
+              </th>
+              <th scope="col" class="text-left px-3 py-2 border-b border-[var(--c-line)] text-[0.72rem] uppercase tracking-wide text-[var(--c-muted)] font-semibold whitespace-nowrap">
+                <button type="button" class="sort-header inline-flex items-center gap-1 hover:text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]" data-sort-key="risk_score">
+                  Risk <span class="sort-indicator" data-sort-indicator-for="risk_score"></span>
+                </button>
+              </th>
+              <th scope="col" class="text-left px-3 py-2 border-b border-[var(--c-line)] text-[0.72rem] uppercase tracking-wide text-[var(--c-muted)] font-semibold whitespace-nowrap">Status</th>
+              <th scope="col" class="text-left px-3 py-2 border-b border-[var(--c-line)] text-[0.72rem] uppercase tracking-wide text-[var(--c-muted)] font-semibold whitespace-nowrap">Ring</th>
+              <th scope="col" class="text-left px-3 py-2 border-b border-[var(--c-line)] text-[0.72rem] uppercase tracking-wide text-[var(--c-muted)] font-semibold whitespace-nowrap">
+                <button type="button" class="sort-header inline-flex items-center gap-1 hover:text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]" data-sort-key="top_reason">
+                  Top reason <span class="sort-indicator" data-sort-indicator-for="top_reason"></span>
+                </button>
+              </th>
             </tr>
           </thead>
           <tbody id="case-table-body">
             <!-- rows injected by app.js -->
           </tbody>
         </table>
-        <p id="queue-empty-state" class="text-muted text-sm py-3" hidden>No cases match the current filters.</p>
+        <p id="queue-empty-state" class="text-[var(--c-muted)] text-sm py-3" hidden>No cases match the current filters.</p>
       </div>
 
-      <div class="flex items-center justify-between gap-4 mt-4 pt-3 border-t border-line flex-wrap" id="pagination-controls">
-        <p class="text-sm text-muted m-0" id="pagination-summary">&ndash;</p>
+      <div class="flex items-center justify-between gap-4 mt-4 pt-3 border-t border-[var(--c-line)] flex-wrap" id="pagination-controls">
+        <p class="text-sm text-[var(--c-muted)] m-0" id="pagination-summary">&ndash;</p>
         <div class="flex gap-2">
           <button type="button" id="prev-page-btn"
-                  class="text-sm px-3 py-1.5 border border-line-strong rounded-md bg-surface hover:bg-canvas disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+                  class="text-sm px-3 py-1.5 border border-[var(--c-line-strong)] rounded-md bg-[var(--c-surface)] hover:bg-[var(--c-canvas)] disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
             Previous
           </button>
           <button type="button" id="next-page-btn"
-                  class="text-sm px-3 py-1.5 border border-line-strong rounded-md bg-surface hover:bg-canvas disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+                  class="text-sm px-3 py-1.5 border border-[var(--c-line-strong)] rounded-md bg-[var(--c-surface)] hover:bg-[var(--c-canvas)] disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
             Next
           </button>
         </div>
       </div>
     </section>
 
-    <section class="bg-surface border border-line rounded-md p-4 shadow-sm lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto"
+    <section class="bg-[var(--c-surface)] border border-[var(--c-line)] rounded-md p-4 shadow-sm lg:sticky lg:top-8 lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto"
              aria-labelledby="detail-heading" aria-live="polite">
       <h2 id="detail-heading" class="text-[1.05rem] font-bold tracking-tight m-0 mb-3">Case detail</h2>
       <div id="detail-panel">
-        <p class="text-muted text-sm">Select a case from the queue to see its full detail.</p>
+        <p class="text-[var(--c-muted)] text-sm">Select a case from the queue to see its full detail.</p>
       </div>
     </section>
   </main>
 
-  <section class="bg-surface border border-line rounded-md p-4 shadow-sm mx-8 mb-8" aria-labelledby="budget-heading">
+  <section class="bg-[var(--c-surface)] border border-[var(--c-line)] rounded-md p-4 shadow-sm mx-8 mb-8" aria-labelledby="budget-heading">
     <h2 id="budget-heading" class="text-[1.05rem] font-bold tracking-tight m-0 mb-3">Review budget simulator</h2>
-    <p class="text-muted text-sm max-w-[60ch]">
+    <p class="text-[var(--c-muted)] text-sm max-w-[60ch]">
       If a review team can only investigate a fraction of cases each day, how does reviewing them by
       risk score compare to reviewing them in random order?
     </p>
@@ -180,11 +249,11 @@
     </div>
 
     <div id="budget-result" class="text-sm" aria-live="polite">
-      <p class="text-muted text-sm">Loading&hellip;</p>
+      <p class="text-[var(--c-muted)] text-sm">Loading&hellip;</p>
     </div>
   </section>
 
-  <footer class="px-8 py-8 text-center text-sm text-muted">
+  <footer class="px-8 py-8 text-center text-sm text-[var(--c-muted)]">
     <p>Portfolio project on the IEEE&#8209;CIS Fraud Detection dataset &middot; not a production AML system &middot;
       <a href="docs.html" class="text-interactive underline">read the documentation</a></p>
   </footer>

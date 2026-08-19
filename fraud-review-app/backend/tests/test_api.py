@@ -16,8 +16,8 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.data import AppData, load_data
-from backend.main import app, get_app_data
+from backend.data import AppData, CaseStatusStore, load_data
+from backend.main import app, get_app_data, get_case_status_store
 
 
 def _make_app_data(
@@ -66,10 +66,22 @@ def _make_app_data(
 @pytest.fixture
 def client_factory():
     """Yields a function that builds a TestClient backed by whatever
-    AppData you ask for - overrides the app's data dependency directly."""
+    AppData you ask for - overrides the app's data dependency directly.
+    Also overrides the case-status dependency with a FRESH store per
+    test, so a status set in one test can never leak into another - the
+    same class of cross-test pollution bug already hit once in this
+    project's history with a different mechanism (module reimports), so
+    it's worth being deliberate about avoiding it here too."""
     def _factory(**file_flags):
         data = _make_app_data(**file_flags)
+        status_store = CaseStatusStore()  # created ONCE per client, not per-request -
+        # a lambda that constructs CaseStatusStore() fresh on every call would
+        # silently discard status between a PUT and the following GET, since
+        # FastAPI re-invokes dependency override callables on every request,
+        # not once per test (confirmed directly: this was a real bug here
+        # until fixed - status appeared to write successfully then vanish).
         app.dependency_overrides[get_app_data] = lambda: data
+        app.dependency_overrides[get_case_status_store] = lambda: status_store
         return TestClient(app)
 
     yield _factory
@@ -148,6 +160,144 @@ def test_cases_search_special_characters_treated_literally(client_factory):
     resp = client.get("/api/cases?search=" + "(" + "[1]")
     assert resp.status_code == 200
     assert resp.json()["items"] == []  # no TransactionID literally contains "([1]"
+
+
+# ---------------------------------------------------------------------------
+# /api/cases sorting
+# ---------------------------------------------------------------------------
+
+def test_cases_sort_by_amount_ascending(client_factory):
+    client = client_factory()
+    resp = client.get("/api/cases?sort_by=TransactionAmt&sort_dir=asc")
+    amounts = [c["TransactionAmt"] for c in resp.json()["items"]]
+    assert amounts == sorted(amounts)  # fixture: 10.0, 50.0, 100.0
+
+
+def test_cases_sort_by_transaction_id_descending(client_factory):
+    client = client_factory()
+    resp = client.get("/api/cases?sort_by=TransactionID&sort_dir=desc")
+    ids = [c["TransactionID"] for c in resp.json()["items"]]
+    assert ids == [3, 2, 1]
+
+
+def test_cases_default_sort_unchanged_from_before_sorting_existed(client_factory):
+    # No sort params at all should behave exactly as it always has:
+    # risk_score descending - existing frontend code and this endpoint's
+    # documented default both depend on this not silently changing.
+    client = client_factory()
+    resp = client.get("/api/cases")
+    scores = [c["risk_score"] for c in resp.json()["items"]]
+    assert scores == sorted(scores, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# /api/cases/export
+# ---------------------------------------------------------------------------
+
+def test_export_returns_csv_with_correct_headers(client_factory):
+    client = client_factory()
+    resp = client.get("/api/cases/export")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/csv")
+    assert "attachment" in resp.headers["content-disposition"]
+
+
+def test_export_respects_filters_not_just_current_page(client_factory):
+    # Export must reflect the SAME filtered set /api/cases would show,
+    # not be capped to a page size - this is the whole point of a
+    # separate export endpoint rather than reusing the paginated one.
+    client = client_factory()
+    resp = client.get("/api/cases/export?min_risk_score=0.5")
+    lines = resp.text.strip().split("\n")
+    # header + 2 matching rows (fixture: risk_score 0.9 and 0.8 both >= 0.5)
+    assert len(lines) == 1 + 2
+
+
+def test_export_includes_status_column(client_factory):
+    client = client_factory()
+    client.put("/api/cases/1/status", json={"status": "reviewed"})
+    resp = client.get("/api/cases/export")
+    assert "status" in resp.text.split("\n")[0]
+    assert "reviewed" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# /api/cases/{transaction_id}/status
+# ---------------------------------------------------------------------------
+
+def test_set_case_status_reflected_in_case_list(client_factory):
+    client = client_factory()
+    resp = client.put("/api/cases/1/status", json={"status": "escalated"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "escalated"
+
+    list_resp = client.get("/api/cases")
+    case_1 = next(c for c in list_resp.json()["items"] if c["TransactionID"] == 1)
+    assert case_1["status"] == "escalated"
+
+
+def test_set_case_status_reflected_in_case_detail(client_factory):
+    client = client_factory()
+    client.put("/api/cases/1/status", json={"status": "dismissed"})
+    detail = client.get("/api/cases/1").json()
+    assert detail["status"] == "dismissed"
+
+
+def test_clearing_status_with_null_removes_it(client_factory):
+    client = client_factory()
+    client.put("/api/cases/1/status", json={"status": "reviewed"})
+    client.put("/api/cases/1/status", json={"status": None})
+    detail = client.get("/api/cases/1").json()
+    assert detail["status"] is None
+
+
+def test_status_defaults_to_null_when_never_set(client_factory):
+    client = client_factory()
+    detail = client.get("/api/cases/2").json()
+    assert detail["status"] is None
+
+
+def test_set_status_on_unknown_transaction_404s(client_factory):
+    client = client_factory()
+    resp = client.put("/api/cases/99999/status", json={"status": "reviewed"})
+    assert resp.status_code == 404
+
+
+def test_invalid_status_value_rejected(client_factory):
+    client = client_factory()
+    resp = client.put("/api/cases/1/status", json={"status": "not_a_real_status"})
+    assert resp.status_code == 422  # Pydantic Literal validation, not silently accepted
+
+
+def test_status_store_does_not_leak_across_client_factory_calls(client_factory):
+    # Each client_factory() call gets a FRESH status store (see the
+    # fixture) - this is the regression test for that guarantee.
+    client_a = client_factory()
+    client_a.put("/api/cases/1/status", json={"status": "reviewed"})
+
+    client_b = client_factory()
+    detail = client_b.get("/api/cases/1").json()
+    assert detail["status"] is None
+
+
+# ---------------------------------------------------------------------------
+# /api/risk-distribution
+# ---------------------------------------------------------------------------
+
+def test_risk_distribution_buckets_sum_to_total(client_factory):
+    client = client_factory()
+    resp = client.get("/api/risk-distribution")
+    body = resp.json()
+    assert sum(b["count"] for b in body["buckets"]) == body["total"] == 3
+
+
+def test_risk_distribution_places_scores_in_correct_tier(client_factory):
+    # fixture scores: 0.9 (Critical), 0.8 (Critical, since 0.8 >= the 0.75
+    # Critical threshold), 0.2 (Low)
+    client = client_factory()
+    body = client.get("/api/risk-distribution").json()
+    by_label = {b["label"]: b["count"] for b in body["buckets"]}
+    assert by_label == {"Critical": 2, "High": 0, "Medium": 0, "Low": 1}
 
 
 def test_cluster_id_serializes_as_int_not_float(client_factory):

@@ -110,3 +110,35 @@ def load_data(data_dir) -> AppData:
 # everything else is a pure function tests can call directly.
 DATA_DIR = Path(os.environ.get("DATA_DIR", "data/sample"))
 app_data = load_data(DATA_DIR)
+
+
+class CaseStatusStore:
+    """
+    In-memory case-status tracker (Reviewed / Escalated / Dismissed),
+    deliberately kept separate from AppData: AppData is a read-only bundle
+    of what the pipeline exported, this is mutable state the app itself
+    creates. Lives for the process's lifetime - resets on restart, and
+    isn't shared across multiple worker processes if this were ever run
+    with more than one (uvicorn --workers > 1). That's an acceptable
+    tradeoff for a single-reviewer portfolio demo, not something a real
+    multi-user deployment could rely on as-is - a real version would need
+    this backed by a database or shared cache instead.
+    """
+
+    def __init__(self):
+        self._statuses: dict = {}
+
+    def get(self, transaction_id: int) -> Optional[str]:
+        return self._statuses.get(transaction_id)
+
+    def set(self, transaction_id: int, status: Optional[str]) -> None:
+        if status is None:
+            self._statuses.pop(transaction_id, None)
+        else:
+            self._statuses[transaction_id] = status
+
+    def all(self) -> dict:
+        return dict(self._statuses)
+
+
+case_status_store = CaseStatusStore()
