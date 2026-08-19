@@ -84,7 +84,7 @@
         <li><a href="docs.html" class="text-white/80 hover:text-white border-b-2 border-transparent text-sm py-1">Documentation</a></li>
       </ul>
       <button type="button" id="theme-toggle-btn" aria-pressed="false"
-              class="text-sm px-2.5 py-1 border border-white/30 rounded-md text-white/90 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white">
+              class="text-sm px-2.5 py-1 border border-white/30 rounded text-white/90 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white">
         <span id="theme-toggle-label">Dark mode</span>
       </button>
     </div>
@@ -122,7 +122,7 @@
       <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
         <h2 id="queue-heading" class="sr-only">Case queue table and filters</h2>
         <button type="button" id="export-csv-btn"
-                class="text-sm px-3 py-1.5 border border-[var(--c-line-strong)] rounded-md bg-[var(--c-surface)] hover:bg-[var(--c-canvas)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
+                class="text-sm px-3 py-1.5 border border-[var(--c-line-strong)] rounded bg-[var(--c-surface)] hover:bg-[var(--c-canvas)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
           Export CSV
         </button>
         <ul class="flex gap-4 flex-wrap list-none m-0 p-0" aria-label="Risk tier legend">
@@ -149,13 +149,13 @@
         <div class="flex flex-col gap-1">
           <label for="txn-search" class="text-xs text-[var(--c-muted)]">Search by Transaction ID</label>
           <input type="search" id="txn-search" name="txn-search" placeholder="e.g. 3540439"
-                 class="font-data text-sm px-2 py-1 border border-[var(--c-line-strong)] rounded-md w-40 bg-[var(--c-surface)] text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]" />
+                 class="font-data text-sm px-2 py-1 border border-[var(--c-line-strong)] rounded w-40 bg-[var(--c-surface)] text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]" />
         </div>
         <div class="flex flex-col gap-1">
           <label for="min-risk-score" class="text-xs text-[var(--c-muted)]">Minimum risk score</label>
           <input type="number" id="min-risk-score" name="min-risk-score"
                  min="0" max="1" step="0.05" value="0" inputmode="decimal"
-                 class="font-data text-sm px-2 py-1 border border-[var(--c-line-strong)] rounded-md w-24 bg-[var(--c-surface)] text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]" />
+                 class="font-data text-sm px-2 py-1 border border-[var(--c-line-strong)] rounded w-24 bg-[var(--c-surface)] text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]" />
         </div>
         <div class="flex flex-row items-center gap-2">
           <input type="checkbox" id="cluster-only" name="cluster-only" class="focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]" />
@@ -164,7 +164,7 @@
         <div class="flex flex-col gap-1">
           <label for="page-size" class="text-xs text-[var(--c-muted)]">Cases per page</label>
           <select id="page-size" name="page-size"
-                  class="text-sm px-2 py-1 border border-[var(--c-line-strong)] rounded-md bg-[var(--c-surface)] text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
+                  class="text-sm px-2 py-1 border border-[var(--c-line-strong)] rounded bg-[var(--c-surface)] text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
             <option value="10">10</option>
             <option value="20" selected>20</option>
             <option value="50">50</option>
@@ -215,11 +215,11 @@
         <p class="text-sm text-[var(--c-muted)] m-0" id="pagination-summary">&ndash;</p>
         <div class="flex gap-2">
           <button type="button" id="prev-page-btn"
-                  class="text-sm px-3 py-1.5 border border-[var(--c-line-strong)] rounded-md bg-[var(--c-surface)] hover:bg-[var(--c-canvas)] disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
+                  class="text-sm px-3 py-1.5 border border-[var(--c-line-strong)] rounded bg-[var(--c-surface)] hover:bg-[var(--c-canvas)] disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
             Previous
           </button>
           <button type="button" id="next-page-btn"
-                  class="text-sm px-3 py-1.5 border border-[var(--c-line-strong)] rounded-md bg-[var(--c-surface)] hover:bg-[var(--c-canvas)] disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
+                  class="text-sm px-3 py-1.5 border border-[var(--c-line-strong)] rounded bg-[var(--c-surface)] hover:bg-[var(--c-canvas)] disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
             Next
           </button>
         </div>

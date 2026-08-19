@@ -363,7 +363,7 @@ function renderStatusControls(detail) {
     <div class="mt-3">
       <label for="case-status-select" class="text-xs text-[var(--c-muted)] block mb-1">Case status</label>
       <select id="case-status-select"
-              class="text-sm px-2 py-1 border border-[var(--c-line-strong)] rounded-md bg-[var(--c-surface)] text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
+              class="text-sm px-2 py-1 border border-[var(--c-line-strong)] rounded bg-[var(--c-surface)] text-[var(--c-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-ink)]">
         ${optionsHtml}
       </select>
     </div>
@@ -570,7 +570,7 @@ async function loadBudgetSimulation() {
           <div class="font-data text-xl font-bold">${fmtPct(data.random_metric)}</div>
         </div>
       </div>
-      <p class="mt-3 text-xs text-[var(--c-muted)] max-w-[60ch] ${data.is_ground_truth_available ? "" : "border-l-[3px] border-risk-high pl-3"}">${escapeHtml(data.note)}</p>
+      <p class="mt-3 text-xs text-[var(--c-muted)] max-w-[60ch]">${data.is_ground_truth_available ? "" : '<strong class="font-semibold text-[var(--c-ink)]">Note: </strong>'}${escapeHtml(data.note)}</p>
     `;
   } catch (err) {
     console.error("Failed to load budget simulation", err);
